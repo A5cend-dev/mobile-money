@@ -1,4 +1,5 @@
 # Mobile Money to Stellar Backend
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/sublime247/mobile-money/issues)
 
 A backend service that bridges mobile money providers (MTN, Airtel, Orange) with the Stellar blockchain network.
 
