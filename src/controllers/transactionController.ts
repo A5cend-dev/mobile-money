@@ -6,6 +6,13 @@ import { lockManager, LockKeys } from "../utils/lock";
 import { TransactionLimitService } from "../services/transactionLimit/transactionLimitService";
 import { KYCService } from "../services/kyc/kycService";
 import { addTransactionJob, getJobProgress } from "../queue";
+import { MobileMoneyProvider, validateProviderLimits } from "../config/providers";
+import {
+  TransactionResponse,
+  TransactionDetailResponse,
+  CancelTransactionResponse,
+  LimitExceededErrorResponse,
+} from "../types/api";
 
 const IDEMPOTENCY_TTL_HOURS = Number(
   process.env.IDEMPOTENCY_KEY_TTL_HOURS || 24,
@@ -170,6 +177,14 @@ async function processTransactionRequest(
     }
 
     const idempotencyKey = getIdempotencyKey(req);
+
+    const providerLimitCheck = validateProviderLimits(
+      provider as MobileMoneyProvider,
+      parseFloat(amount)
+    );
+    if (!providerLimitCheck.valid) {
+      return res.status(400).json({ error: providerLimitCheck.error });
+    }
 
     const limitCheck = await transactionLimitService.checkTransactionLimit(
       userId,
