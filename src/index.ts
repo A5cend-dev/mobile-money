@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import compression from "compression";
 import dotenv from "dotenv";
 import session from "express-session";
+import { Server } from "http";
 
 import {
   apiVersionMiddleware,
@@ -30,6 +31,7 @@ import { vaultRoutes } from "./routes/vaults";
 import { errorHandler } from "./middleware/errorHandler";
 import {
   connectRedis,
+  disconnectRedis,
   redisClient,
   createRedisStore,
   SESSION_TTL_SECONDS,
@@ -49,6 +51,7 @@ import { validateStellarNetwork, logStellarNetwork } from "./config/stellar";
 import { sessionAnomalyLogger } from "./services/logger";
 import { HealthCheckResponse, ReadinessCheckResponse } from "./types/api";
 import sep31Router from "./stellar/sep31";
+import sep24Router from "./stellar/sep24";
 
 dotenv.config();
 
@@ -57,6 +60,14 @@ logStellarNetwork();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SHUTDOWN_TIMEOUT_MS = parseInt(
+  process.env.SHUTDOWN_TIMEOUT_MS || "30000",
+);
+
+let server: Server | null = null;
+let isShuttingDown = false;
+let shutdownInProgress = false;
+let activeRequests = 0;
 
 const RATE_LIMIT_WINDOW_MS = parseInt(
   process.env.RATE_LIMIT_WINDOW_MS || "900000",
@@ -119,6 +130,32 @@ app.use(limiter);
 app.use(responseTime);
 app.use(requestId);
 
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (isShuttingDown) {
+    res.setHeader("Connection", "close");
+    return res.status(503).json({
+      error: "Service Unavailable",
+      message: "Server is shutting down. Please retry shortly.",
+    });
+  }
+
+  activeRequests += 1;
+  let completed = false;
+
+  const onRequestFinished = () => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    activeRequests = Math.max(0, activeRequests - 1);
+  };
+
+  res.on("finish", onRequestFinished);
+  res.on("close", onRequestFinished);
+
+  next();
+});
+
 // Session configuration with Redis store
 const sessionSecret =
   process.env.SESSION_SECRET || "default-secret-change-in-production";
@@ -148,8 +185,16 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 app.get("/ready", async (_req: Request, res: Response) => {
-  const checks: Record<string, string> = { database: "down", redis: "down" };
+  const checks: Record<string, string> = {
+    database: "down",
+    redis: "down",
+    shutdown: isShuttingDown ? "in-progress" : "idle",
+  };
   let allReady = true;
+
+  if (isShuttingDown) {
+    allReady = false;
+  }
 
   try {
     await pool.query("SELECT 1");
@@ -244,6 +289,93 @@ app.use(
 app.use(timeoutErrorHandler);
 app.use(errorHandler);
 
+function waitForActiveRequests(timeoutMs: number): Promise<void> {
+  if (activeRequests === 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      if (activeRequests === 0 || Date.now() - startedAt >= timeoutMs) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 100);
+  });
+}
+
+async function gracefulShutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shutdownInProgress) {
+    console.log(`[Shutdown] ${signal} received; shutdown already in progress`);
+    return;
+  }
+
+  shutdownInProgress = true;
+  isShuttingDown = true;
+  console.log(`[Shutdown] Received ${signal}. Starting graceful shutdown...`);
+
+  try {
+    if (server) {
+      console.log("[Shutdown] Stopping HTTP server from accepting new requests");
+      await new Promise<void>((resolve, reject) => {
+        server?.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+      console.log("[Shutdown] HTTP listener closed");
+    }
+
+    const pendingAtStart = activeRequests;
+    if (pendingAtStart > 0) {
+      console.log(
+        `[Shutdown] Waiting for ${pendingAtStart} active request(s) to finish (timeout ${SHUTDOWN_TIMEOUT_MS}ms)`,
+      );
+    }
+
+    await waitForActiveRequests(SHUTDOWN_TIMEOUT_MS);
+
+    if (activeRequests > 0) {
+      console.warn(
+        `[Shutdown] Timed out waiting for active requests. Remaining: ${activeRequests}`,
+      );
+    } else {
+      console.log("[Shutdown] All active requests finished");
+    }
+
+    console.log("[Shutdown] Draining queue resources");
+    const { shutdownQueue } = await import("./queue");
+    await shutdownQueue();
+    console.log("[Shutdown] Queue resources closed");
+
+    console.log("[Shutdown] Closing PostgreSQL pool");
+    await pool.end();
+    console.log("[Shutdown] PostgreSQL pool closed");
+
+    console.log("[Shutdown] Closing Redis client");
+    await disconnectRedis();
+    console.log("[Shutdown] Redis client closed");
+
+    console.log("[Shutdown] Graceful shutdown complete");
+    process.exit(0);
+  } catch (error) {
+    console.error("[Shutdown] Shutdown sequence failed", error);
+    process.exit(1);
+  }
+}
+
+process.once("SIGTERM", () => {
+  void gracefulShutdown("SIGTERM");
+});
+
+process.once("SIGINT", () => {
+  void gracefulShutdown("SIGINT");
+});
+
 async function initializeRuntime(): Promise<void> {
   if (process.env.NODE_ENV === "test") {
     return;
@@ -267,7 +399,7 @@ async function initializeRuntime(): Promise<void> {
   const { createQueueDashboard } = await import("./queue/dashboard");
   app.use("/admin/queues", createQueueDashboard());
 
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
 if (process.env.NODE_ENV !== "test") {
