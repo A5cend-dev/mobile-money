@@ -7,6 +7,8 @@ import {
   providerFailoverTotal,
   providerFailoverAlerts,
 } from "../../utils/metrics";
+import { pool } from "../../config/database";
+import { MonitoringService } from "../monitoringService";
 
 interface MobileMoneyProvider {
   requestPayment(
