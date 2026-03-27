@@ -1,11 +1,12 @@
-import { connection } from "./config";
+import { rabbitMQManager } from "./rabbitmq";
 import { transactionQueue } from "./transactionQueue";
-import { transactionWorker, closeWorker } from "./worker";
+import { closeWorker } from "./worker";
 
 export async function shutdownQueue(): Promise<void> {
+  console.log("Shutting down queues...");
   await closeWorker().catch(() => undefined);
   await transactionQueue.close().catch(() => undefined);
-  await connection.quit().catch(() => undefined);
+  await rabbitMQManager.close().catch(() => undefined);
 }
 
 export {
@@ -22,11 +23,11 @@ export type {
   TransactionJobData,
   TransactionJobResult,
 } from "./transactionQueue";
-export { transactionWorker, closeWorker };
+export { closeWorker };
 export { createQueueDashboard } from "./dashboard";
 export {
   getQueueHealth,
   pauseQueueEndpoint,
   resumeQueueEndpoint,
 } from "./health";
-export { queueOptions } from "./config";
+

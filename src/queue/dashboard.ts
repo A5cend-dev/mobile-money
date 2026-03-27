@@ -1,28 +1,16 @@
-import { ExpressAdapter } from "@bull-board/express";
-import { createBullBoard } from "@bull-board/api";
-import { BullMQAdapter } from "@bull-board/api/dist/queueAdapters/bullMQ";
-import { transactionQueue } from "./transactionQueue";
-
-const createQueueAdapter = () => {
-  return new BullMQAdapter(transactionQueue, {
-    readOnlyMode: false,
-  });
-};
+import { Router } from "express";
 
 export function createQueueDashboard() {
-  const serverAdapter = new ExpressAdapter();
+  const router = Router();
 
-  createBullBoard({
-    queues: [createQueueAdapter()],
-    serverAdapter: serverAdapter,
-    options: {
-      uiConfig: {
-        boardTitle: "Mobile Money Queue Dashboard",
-      },
-    },
+  router.get("/", (req, res) => {
+    res.send(`
+      <h1>Queue Dashboard</h1>
+      <p>The queue dashboard has been migrated to RabbitMQ.</p>
+      <p>Please use the RabbitMQ Management UI to monitor queues.</p>
+    `);
   });
 
-  serverAdapter.setBasePath("/admin/queues");
-
-  return serverAdapter.getRouter();
+  return router;
 }
+

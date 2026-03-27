@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { transactionQueue, getQueueStats } from "./transactionQueue";
+import { getQueueStats, pauseQueue, resumeQueue } from "./transactionQueue";
 import { QueueHealthResponse, QueueActionResponse } from "../types/api";
 
 export async function getQueueHealth(req: Request, res: Response) {
@@ -29,7 +29,7 @@ export async function getQueueHealth(req: Request, res: Response) {
 
 export async function pauseQueueEndpoint(req: Request, res: Response) {
   try {
-    await transactionQueue.pause();
+    await pauseQueue();
     const body: QueueActionResponse = {
       success: true,
       message: "Queue paused",
@@ -43,7 +43,7 @@ export async function pauseQueueEndpoint(req: Request, res: Response) {
 
 export async function resumeQueueEndpoint(req: Request, res: Response) {
   try {
-    await transactionQueue.resume();
+    await resumeQueue();
     const body: QueueActionResponse = {
       success: true,
       message: "Queue resumed",
@@ -54,3 +54,4 @@ export async function resumeQueueEndpoint(req: Request, res: Response) {
     res.status(500).json({ error: "Failed to resume queue" });
   }
 }
+
