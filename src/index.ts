@@ -29,6 +29,7 @@ import { createKYCRoutes } from "./routes/kycRoutes";
 import { vaultRoutes } from "./routes/vaults";
 import { adminRoutes } from "./routes/admin";
 import webhookRoutes from "./routes/webhooks";
+import accountingRoutes from "./routes/accounting";
 import { errorHandler } from "./middleware/errorHandler";
 import {
   connectRedis,
@@ -223,6 +224,7 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
 app.use("/api/admin", requireAuth, adminRoutes);
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/accounting", requireAuth, accountingRoutes);
 app.use("/sep31", sep31Router);
 
 // SEP-24 Interactive Deposit/Withdrawal Flow
@@ -271,6 +273,11 @@ async function initializeRuntime(): Promise<void> {
 
   const { createQueueDashboard } = await import("./queue/dashboard");
   app.use("/admin/queues", createQueueDashboard());
+
+  // Start accounting sync jobs
+  const { accountingSyncJob } = await import("./jobs/accountingSyncJob");
+  accountingSyncJob.start();
+  console.log("Accounting sync jobs started");
 
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
