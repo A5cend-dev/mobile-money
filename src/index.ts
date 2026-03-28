@@ -3,11 +3,11 @@ import express, { NextFunction, Request, Response } from "express";
 import { IncomingMessage } from "http";
 import cors from "cors";
 import helmet from "helmet";
-import { globalRateLimiter } from "./middleware/rateLimit";
+// replaced express-rate-limit with our redis-backed middleware
 import compression from "compression";
 import dotenv from "dotenv";
 
-import spdy from "spdy";
+import https from "https";
 import fs from "fs";
 import path from "path";
 import session from "express-session";
@@ -33,8 +33,7 @@ import { statsRoutes } from "./routes/stats";
 import { contactsRoutes } from "./routes/contacts";
 import { reportsRoutes } from "./routes/reports";
 import { createKYCRoutes } from "./routes/kycRoutes";
-import { vaultRoutes } from "./routes/vaults";
-import { adminRoutes } from "./routes/admin";
+import adminRoutes from "./routes/admin";
 import { authRoutes } from "./routes/auth";
 import { errorHandler } from "./middleware/errorHandler";
 import {
@@ -61,6 +60,8 @@ import { HealthCheckResponse, ReadinessCheckResponse } from "./types/api";
 import sep31Router from "./stellar/sep31";
 import sep24Router from "./stellar/sep24";
 import { createSep12Router } from "./stellar/sep12";
+import { createSep10Router } from "./stellar/sep10";
+import tomlRouter from "./routes/toml";
 
 // 1. Import Sentry Middleware
 import { initSentry, sentryBreadcrumbMiddleware } from "./middleware/sentry";
@@ -83,7 +84,7 @@ if (process.env.SENTRY_DSN) {
   Sentry.setupExpressErrorHandler(app);
 }
 
-const limiter = globalRateLimiter;
+import rateLimitMiddleware from "./middleware/rateLimit";
 
 // 4. Custom Breadcrumb Enrichment
 app.use(sentryBreadcrumbMiddleware);
@@ -133,7 +134,7 @@ app.use(
     extended: true,
   }),
 );
-app.use(limiter);
+app.use(rateLimitMiddleware);
 app.use(responseTime);
 app.use(requestId);
 
@@ -237,9 +238,11 @@ app.use("/api/contacts", contactsRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
 app.use("/api/admin", requireAuth, adminRoutes);
+app.use("/sep10", createSep10Router());
 app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
 app.use("/sep12", createSep12Router(pool));
+app.use("/.well-known/stellar.toml", tomlRouter);
 
 app.use(
   (
@@ -290,7 +293,7 @@ async function initializeRuntime(): Promise<void> {
   const { createQueueDashboard } = await import("./queue/dashboard");
   app.use("/admin/queues", createQueueDashboard());
 
-  // 
+  //
   const useHTTP2 = process.env.USE_HTTP2 === "true";
 
   if (useHTTP2) {
@@ -298,12 +301,12 @@ async function initializeRuntime(): Promise<void> {
       key: fs.readFileSync(path.join(__dirname, "../certs/key.pem")),
       cert: fs.readFileSync(path.join(__dirname, "../certs/cert.pem")),
     };
-    spdy.createServer(sslOptions, app).listen(PORT, () => {
+    https.createServer(sslOptions, app).listen(PORT, () => {
       console.log(`HTTP/2 server running on https://localhost:${PORT}`);
     });
   } else {
     app.listen(PORT, () =>
-      console.log(`HTTP/1.1 server running on http://localhost:${PORT}`)
+      console.log(`HTTP/1.1 server running on http://localhost:${PORT}`),
     );
   }
 }
@@ -311,6 +314,5 @@ async function initializeRuntime(): Promise<void> {
 if (process.env.NODE_ENV !== "test") {
   void initializeRuntime();
 }
-
 
 export default app;
