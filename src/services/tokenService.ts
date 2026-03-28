@@ -74,6 +74,41 @@ class TokenService {
   private label(lbl: string) {
     return `refresh_token:${lbl}`;
   }
+
+  // Verify refresh token
+  async verifyRefreshToken(userId: string, token: string) {
+    try {
+      const decode = jwt.verify(token, env.REFRESH_TOKEN_SECRET);
+      const { jti } = decode as any;
+
+      // Check if token is still in Redis
+      const redisData = await redisClient.get(this.label(jti));
+      if (!redisData) {
+        throw new Error("Token not found or expired");
+      }
+
+      const tokenData = JSON.parse(redisData);
+      if (!tokenData.isActive) {
+        throw new Error("Token has been revoked");
+      }
+
+      // Verify in DB
+      const res = await pool.query(
+        `SELECT * FROM refresh_tokens
+        WHERE user_id = $1 AND token_jti = $2 AND is_active = TRUE AND revoked_at IS NULL`,
+        [userId, jti],
+      );
+
+      if (res.rows.length === 0) {
+        throw new Error("Token not found or revoked");
+      }
+
+      return decode;
+    } catch (err) {
+      console.error("Token verifcation failed:", err);
+      throw err;
+    }
+  }
 }
 
 export const tokenService = new TokenService();
