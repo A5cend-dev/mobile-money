@@ -10,16 +10,16 @@ import { StellarService } from "../services/stellar/stellarService";
 import { EmailService } from "../services/email";
 import { UserModel } from "../models/users";
 import { withRetry } from "../services/retry";
-import { SmsService } from "../services/sms";
+import { WhatsappService } from "../services/whatsapp";
 import { notifyTransactionWebhook, WebhookService } from "../services/webhook";
 import { pushNotificationService } from "../services/push";
-
+import { capturePersistentFailure } from "./dlq";
 const transactionModel = new TransactionModel();
 const mobileMoneyService = new MobileMoneyService();
 const stellarService = new StellarService();
 const emailService = new EmailService();
 const userModel = new UserModel();
-const smsService = new SmsService();
+const whatsappService = new WhatsappService();
 const webhookService = new WebhookService();
 const pushService = pushNotificationService;
 
@@ -52,7 +52,11 @@ async function sendTransactionEmail(transactionId: string): Promise<void> {
 
   const user = await userModel.findById(transaction.userId);
   if (user?.email) {
-    await emailService.sendTransactionReceipt(user.email, transaction);
+    await emailService.sendTransactionReceipt(
+      user.email,
+      transaction,
+      user.preferredLanguage,
+    );
   }
 }
 
@@ -67,7 +71,12 @@ async function sendFailureEmail(
 
   const user = await userModel.findById(transaction.userId);
   if (user?.email) {
-    await emailService.sendTransactionFailure(user.email, transaction, reason);
+    await emailService.sendTransactionFailure(
+      user.email,
+      transaction,
+      reason,
+      user.preferredLanguage,
+    );
   }
 }
 
@@ -291,6 +300,12 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
       status: "failed",
       error: getErrorMessage(error)
     });
+
+    if (job) {
+      capturePersistentFailure(job).catch(err => console.error('[DLQ] Error capturing failure:', err));
+    }
+  },
+);
 
     throw error;
   }
