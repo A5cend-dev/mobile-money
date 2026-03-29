@@ -9,12 +9,6 @@ ADD COLUMN IF NOT EXISTS role_id UUID;
 ALTER TABLE users
 ALTER COLUMN role_id SET NOT NULL;
 
--- 2. Normalize: Before adding the constraint, make sure all existing users.role values exist in roles.name.
--- UPDATE users
--- SET role = 'users'
--- WHERE role iS NULL 
---     OR role IN (SELECT name FROM roles);
-
 -- 3. Add index
 CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id);
 
