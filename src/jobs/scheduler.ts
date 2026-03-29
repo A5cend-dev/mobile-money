@@ -38,6 +38,12 @@ const JOBS: JobConfig[] = [
     schedule: process.env.ACCOUNT_MERGE_CRON || "0 3 * * *",
     handler: runAccountMergeJob,
   },
+  {
+    name: "provider-balance-alert",
+    // Every 10 minutes - checks MTN/Airtel operational balances and alerts treasury when low
+    schedule: process.env.PROVIDER_BALANCE_ALERT_CRON || "*/10 * * * *",
+    handler: runProviderBalanceAlertJob,
+  },
 ];
 
 async function runJob(job: JobConfig): Promise<void> {
