@@ -34,6 +34,8 @@ import { statsRoutes } from "./routes/stats";
 import { contactsRoutes } from "./routes/contacts";
 import { reportsRoutes } from "./routes/reports";
 import { statementsRoutes } from "./routes/statements";
+import { feesRoutes } from "./routes/fees";
+import { stellarRoutes } from "./routes/stellar";
 import { createKYCRoutes } from "./routes/kycRoutes";
 import { vaultRoutes } from "./routes/vaults";
 import { adminRoutes } from "./routes/admin";
@@ -343,9 +345,11 @@ app.use("/api/disputes", disputeRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/contacts", contactsRoutes);
 app.use("/api/reports", reportsRoutes);
-app.use("/api/statements", statementsRoutes);
+app.use("/api/fees", feesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
+
+app.use("/api/stellar", stellarRoutes);
 
 // GDPR
 app.use("/api/gdpr", privacyRoutes);
@@ -355,7 +359,6 @@ app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
 app.use("/sep38", sep38Router);
 app.use("/sep12", createSep12Router(pool));
-app.use("/sep10", createSep10Router());
 app.use("/.well-known/stellar.toml", tomlRouter);
 
 app.use(
