@@ -84,6 +84,8 @@ export const requireAuth = (
       id: "admin-system",
       role: "admin",
     };
+    // Issue #518: Admin keys get full permissions
+    (req as any).apiKeyPermissions = 0x0f; // ApiKeyPermission.ALL
 
     return next();
   }
@@ -199,4 +201,19 @@ export function optionalAuthentication(
   }
 
   next();
+}
+
+export async function verifyTokenStateful(token: string): Promise<JWTPayload> {
+  // Run standard cryptographic verification
+  const decoded = verifyToken(token);
+  
+  // Fast Redis check to ensure token wasn't issued before a password change
+  if (redisClient.isOpen && decoded.userId && decoded.iat) {
+    const invalidatedAt = await redisClient.get(`user:${decoded.userId}:jwt_invalidated_at`);
+    if (invalidatedAt && decoded.iat <= parseInt(invalidatedAt, 10)) {
+      throw new Error("Token has been revoked due to password change");
+    }
+  }
+  
+  return decoded;
 }
