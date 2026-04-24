@@ -252,25 +252,41 @@ export function createExportRoutes(
       const queryStream = createQueryStream(text, values);
       const rowStream = client.query(queryStream);
 
-      const filename = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+      const format = req.query.format === "json" ? "json" : "csv";
+      const filename = `transactions-${new Date().toISOString().slice(0, 10)}.${format}`;
+
       res.status(200);
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Type", format === "json" ? "application/json" : "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`,
       );
-      res.write(`${CSV_HEADERS.join(",")}\n`);
 
-      const csvTransform = new Transform({
-        objectMode: true,
-        transform(
-          chunk: Record<string, unknown>,
-          _encoding,
-          callback,
-        ) {
-          callback(null, transactionRowToCsv(chunk));
-        },
-      });
+      let transform: Transform;
+      if (format === "csv") {
+        res.write(`${CSV_HEADERS.join(",")}\n`);
+        transform = new Transform({
+          objectMode: true,
+          transform(chunk: Record<string, unknown>, _encoding, callback) {
+            callback(null, transactionRowToCsv(chunk));
+          },
+        });
+      } else {
+        let first = true;
+        res.write("[\n");
+        transform = new Transform({
+          objectMode: true,
+          transform(chunk: Record<string, unknown>, _encoding, callback) {
+            const data = (first ? "" : ",\n") + JSON.stringify(chunk, null, 2);
+            first = false;
+            callback(null, data);
+          },
+          flush(callback) {
+            res.write("\n]");
+            callback();
+          },
+        });
+      }
 
       res.on("close", () => {
         if ("destroy" in rowStream && typeof rowStream.destroy === "function") {
@@ -281,7 +297,7 @@ export function createExportRoutes(
 
       pipeline(
         rowStream,
-        csvTransform,
+        transform,
         res,
         (error) => {
           releaseClient();
@@ -295,7 +311,12 @@ export function createExportRoutes(
       const message =
         error instanceof Error ? error.message : "Failed to export transactions";
       const statusCode = message.startsWith("Invalid") ? 400 : 500;
-      res.status(statusCode).json({ error: message });
+      if (!res.headersSent) {
+        res.status(statusCode).json({ error: message });
+      } else {
+        console.error("Error after headers sent:", message);
+        res.end();
+      }
     }
   });
 
