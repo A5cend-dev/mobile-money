@@ -1,6 +1,11 @@
+import "./tracer";
 import path from "path";
+import express, { NextFunction, Request, Response } from "express";
 // Serve SEP-1 stellar.toml at /.well-known/stellar.toml
 app.use("/.well-known", express.static(path.join(__dirname, "../public/.well-known")));
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import "./tracer";
 
 import express, { NextFunction, Request, Response } from "express";
@@ -76,6 +81,7 @@ import { privacyRoutes } from "./routes/privacy";
 import { developerDashboardRoutes } from "./routes/developerDashboard";
 import { travelRuleRoutes } from "./routes/travelRule";
 import sep31Router from "./stellar/sep31";
+import { rateLimitMiddleware } from "./middleware/rateLimitRedis";
 import sep24Router from "./stellar/sep24";
 import sep38Router from "./stellar/sep38";
 import { createSep12Router } from "./stellar/sep12";
